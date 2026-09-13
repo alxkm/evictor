@@ -18,6 +18,14 @@ repositories {
     mavenCentral()
 }
 
+sourceSets {
+    benchmark {
+        java.srcDir 'src/benchmark/java'
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
 dependencies {
     testImplementation platform('org.junit:junit-bom:5.10.2')
     testImplementation 'org.junit.jupiter:junit-jupiter'
@@ -49,4 +57,24 @@ jacocoTestReport {
         xml.required = true
         html.required = true
     }
+}
+
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            limit {
+                counter = 'LINE'
+                minimum = 0.80
+            }
+        }
+    }
+}
+
+check.dependsOn jacocoTestCoverageVerification
+
+tasks.register('benchmark', JavaExec) {
+    group = 'verification'
+    description = 'Measures the hit rate of every policy across the access patterns'
+    classpath = sourceSets.benchmark.runtimeClasspath
+    mainClass = 'org.cache.benchmark.HitRateBenchmark'
 }

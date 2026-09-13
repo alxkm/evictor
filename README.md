@@ -1,414 +1,245 @@
-[![Java CI with Gradle](https://github.com/alxkm/cache/actions/workflows/gradle.yml/badge.svg)](https://github.com/alxkm/cache/actions/workflows/gradle.yml)[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+# Evictor
 
-# Cache Implementations
+Thirteen cache eviction policies in Java, behind one interface, measured against each other.
 
-This repository contains implementations of both Least Recently Used (LRU) and Least Frequently Used (LFU) Cache in Java using various data structures:
+[![Java CI with Gradle](https://github.com/alxkm/evictor/actions/workflows/gradle.yml/badge.svg)](https://github.com/alxkm/evictor/actions/workflows/gradle.yml)
+[![CodeQL](https://github.com/alxkm/evictor/actions/workflows/codeql.yml/badge.svg)](https://github.com/alxkm/evictor/actions/workflows/codeql.yml)
+[![Java 17](https://img.shields.io/badge/Java-17-blue.svg)](https://openjdk.org/projects/jdk/17/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## LRU Cache Implementations
+## The reason this repository exists
 
-1. **LRULinkedHashMapCache**: Implementation using `LinkedHashMap` to maintain insertion order.
-2. **LRUDoublyLinkedListCache**: Implementation using a custom doubly linked list and `HashMap`.
-3. **LRUHashMapQueueCache**: Implementation using `HashMap` and `Deque` (double-ended queue) for managing access order.
+Everyone reaches for LRU. Here is what that costs, on identical traffic, measured by the benchmark
+in this repository:
 
-### Overview
+| Policy | zipfian | hot set + scan | loop | scan |
+|---|---|---|---|---|
+| LRU | 47.7% | 65.8% | **0.0%** | 0.0% |
+| LFU | 56.9% | 80.0% | 0.0% | 0.0% |
+| FIFO | 43.3% | 55.4% | 0.0% | 0.0% |
+| Clock | 48.9% | 69.9% | 0.0% | 0.0% |
+| Random | 43.3% | 55.5% | 68.6% | 0.0% |
+| MRU | 2.7% | 1.0% | **83.2%** | 0.9% |
+| SLRU | 56.8% | **80.0%** | 0.0% | 0.0% |
+| 2Q | 55.7% | 76.7% | 71.0% | 0.0% |
+| ARC | **57.0%** | **80.0%** | 0.0% | 0.0% |
 
-LRU Cache is a caching technique where the least recently used items are removed from the cache when it exceeds its predefined capacity. This ensures that the cache doesn't grow indefinitely and optimizes access time by retaining frequently used items.
+Hit rate, cache capacity 500, 500,000 requests per pattern. Reproduce with `./gradlew benchmark`.
 
-### CacheService Interface
+Three things worth reading off that table:
 
-#### Description
-`CacheService` defines the interface for the LRU Cache implementations.
+- **On a loop just larger than the cache, LRU scores exactly zero.** Not "worse", zero. It evicts
+  the entry it is about to need, every single time. MRU, the policy that looks broken everywhere
+  else, gets 83.2% on it.
+- **A batch scan crossing hot traffic costs plain LRU a fifth of its hit rate** (65.8% against
+  80.0%). SLRU, 2Q and ARC hold the working set because a single access is not enough to earn a
+  place in them.
+- **Nothing beats a pure scan.** When no key is ever read twice, no policy can help, and any
+  benchmark that claims otherwise is measuring its own warm-up.
 
-#### Methods
-- `put(K id, V value)`: Inserts a key-value pair into the cache. If the key already exists, updates the value and adjusts its position based on access.
-- `get(K id)`: Retrieves the value associated with the key from the cache. If the key exists, marks it as recently used.
-- `evict(K id)`: Removes the key-value pair from the cache.
+The right eviction policy is a property of your access pattern, and the difference is not a few
+percent. This repository implements the alternatives, explains each one, and gives you the harness
+to measure them on your own traffic.
 
-### Implementations
-
-#### 1. LRULinkedHashMapCache
-
-**Description**: LRU Cache implemented using `LinkedHashMap`, which maintains elements in the order of their access. When the capacity is exceeded, the least recently accessed entry is removed.
-
-**Constructor**
-```java
-LRULinkedHashMapCache(int capacity): Initializes the cache with a specified capacity.
-```
-
-**Time Complexity**
-- `put`: O(1)
-- `get`: O(1)
-- `evict`: O(1)
-
-#### 2. LRUDoublyLinkedListCache
-
-**Description**: LRU Cache implemented using a custom doubly linked list (`Node` class) and `HashMap`. This implementation manages the access order explicitly by moving nodes within the linked list.
-
-**Constructor**
-```java
-LRUDoublyLinkedListCache(int capacity): Initializes the cache with a specified capacity.
-```
-
-**Time Complexity**
-- `put`: O(1)
-- `get`: O(1)
-- `evict`: O(1)
-
-#### 3. LRUHashMapQueueCache
-
-**Description**: LRU Cache implemented using `HashMap` and `Deque` (specifically `LinkedList`), where `Deque` is used to maintain the order of keys based on their access time. The most recently accessed keys are moved to the front of the `Deque`.
-
-**Constructor**
-```java
-LRUHashMapQueueCache(int capacity): Initializes the cache with a specified capacity.
-```
-
-**Time Complexity**
-- `put`: O(1)
-- `get`: O(1)
-- `evict`: O(1)
-
-### Usage
-
-Each implementation provides the same interface (`CacheService`) for inserting, retrieving, and evicting elements from the cache. Here's an example of usage for all three classes:
+## Quick start
 
 ```java
-public class Main {
-    public static void main(String[] args) {
-        // Using LRULinkedHashMapCache
-        CacheService<Integer, String> linkedHashMapCache = new LRULinkedHashMapCache<>(3);
-        linkedHashMapCache.put(1, "one");
-        linkedHashMapCache.put(2, "two");
-        linkedHashMapCache.put(3, "three");
-        System.out.println(linkedHashMapCache.get(1)); // Output: one
-        linkedHashMapCache.put(4, "four");
-        System.out.println(linkedHashMapCache.get(2)); // Output: null (evicted)
-        linkedHashMapCache.put(5, "five");
-        System.out.println(linkedHashMapCache.get(3)); // Output: null (evicted)
-        System.out.println(linkedHashMapCache.get(4)); // Output: four
-        System.out.println(linkedHashMapCache.get(5)); // Output: five
+CacheService<Long, User> users = Caches.lru(10_000);
 
-        // Using LRUDoublyLinkedListCache
-        CacheService<Integer, String> doublyLinkedListCache = new LRUDoublyLinkedListCache<>(3);
-        doublyLinkedListCache.put(1, "one");
-        doublyLinkedListCache.put(2, "two");
-        doublyLinkedListCache.put(3, "three");
-        System.out.println(doublyLinkedListCache.get(1)); // Output: one
-        doublyLinkedListCache.put(4, "four");
-        System.out.println(doublyLinkedListCache.get(2)); // Output: null (evicted)
-        doublyLinkedListCache.put(5, "five");
-        System.out.println(doublyLinkedListCache.get(3)); // Output: null (evicted)
-        System.out.println(doublyLinkedListCache.get(4)); // Output: four
-        System.out.println(doublyLinkedListCache.get(5)); // Output: five
-
-        // Using LRUHashMapQueueCache
-        CacheService<Integer, String> hashMapQueueCache = new LRUHashMapQueueCache<>(3);
-        hashMapQueueCache.put(1, "one");
-        hashMapQueueCache.put(2, "two");
-        hashMapQueueCache.put(3, "three");
-        System.out.println(hashMapQueueCache.get(1)); // Output: one
-        hashMapQueueCache.put(4, "four");
-        System.out.println(hashMapQueueCache.get(2)); // Output: null (evicted)
-        hashMapQueueCache.put(5, "five");
-        System.out.println(hashMapQueueCache.get(3)); // Output: null (evicted)
-        System.out.println(hashMapQueueCache.get(4)); // Output: four
-        System.out.println(hashMapQueueCache.get(5)); // Output: five
-    }
-}
+users.put(42L, new User("Ada"));
+User ada = users.get(42L);                                   // hit
+User loaded = users.computeIfAbsent(7L, repository::find);   // load through the cache
 ```
 
-
-## LFU Cache Implementations
-
-### Overview
-
-LFU Cache is a caching technique where the least frequently used items are removed from the cache when it exceeds its predefined capacity. This helps in retaining the most frequently accessed items in the cache.
-
-### LFUDoublyLinkedListCache Class
-
-#### Description
-`LFUDoublyLinkedListCache` is a Java implementation of an LFU Cache that uses a `HashMap` for quick access to cache entries and a custom doubly linked list to maintain frequency counts. This implementation ensures efficient retrieval, insertion, and eviction of cache entries based on their access frequency.
-
-#### Constructor
-```java
-/**
- * Constructs an LFU Cache with the specified capacity.
- *
- * @param capacity the capacity of the cache
- */
-public LFUDoublyLinkedListCache(int capacity);
-```
-
-#### Methods
-```java
-/**
- * Adds an item to the cache. If the cache is full, evicts the least frequently used item.
- * If an item with the same key already exists, updates its value and frequency.
- *
- * @param id    the key with which the specified value is to be associated
- * @param value the value to be associated with the specified key
- */
-@Override
-public void put(K id, V value);
-
-/**
- * Retrieves the value associated with the specified key. If the key is found,
- * increases its frequency.
- *
- * @param id the key whose associated value is to be returned
- * @return the value to which the specified key is mapped, or null if this cache contains no mapping for the key
- */
-@Override
-public V get(K id);
-
-/**
- * Evicts the item with the specified key from the cache.
- *
- * @param id the key whose mapping is to be removed from the cache
- */
-@Override
-public void evict(K id);
-```
-
-**Time Complexity**
-- `put`: O(1)
-- `get`: O(1)
-- `evict`: O(1)
-
-#### CacheNode Class
-
-Represents a key-value pair with a frequency counter.
+Switching policy is one word:
 
 ```java
-private static class CacheNode<K, V> {
-    K key;
-    V value;
-    int frequency;
-
-    /**
-     * Constructs a new node with the specified key and value. Initializes the frequency to 1.
-     *
-     * @param key   the key of the node
-     * @param value the value of the node
-     */
-    CacheNode(K key, V value);
-}
+Caches.lru(1_000);                                  // recency
+Caches.lfu(1_000);                                  // frequency
+Caches.arc(1_000);                                  // adaptive, tunes itself
+Caches.expiring(1_000, Duration.ofMinutes(5));      // bounded by size and by age
+Caches.synchronizedCache(Caches.slru(1_000));       // thread safe view
 ```
 
-### LFUTreeMapCache Class
-
-#### Description
-`LFUTreeMapCache` is a Java implementation of an LFU Cache that uses a `HashMap` for quick access to cache entries and a `TreeMap` to maintain frequency counts in sorted order. This implementation ensures efficient retrieval, insertion, and eviction of cache entries based on their access frequency.
-
-#### Constructor
-```java
-/**
- * Constructs an LFU Cache with the specified capacity.
- *
- * @param capacity the capacity of the cache
- */
-public LFUTreeMapCache(int capacity);
-```
-
-#### Methods
-```java
-/**
- * Adds an item to the cache. If the cache is full, evicts the least frequently used item.
- * If an item with the same key already exists, updates its value and frequency.
- *
- * @param id    the key with which the specified value is to be associated
- * @param value the value to be associated with the specified key
- */
-@Override
-public void put(K id, V value);
-
-/**
- * Retrieves the value associated with the specified key. If the key is found,
- * increases its frequency.
- *
- * @param id the key whose associated value is to be returned
- * @return the value to which the specified key is mapped, or null if this cache contains no mapping for the key
- */
-@Override
-public V get(K id);
-
-/**
- * Evicts the item with the specified key from the cache.
- *
- * @param id the key whose mapping is to be removed from the cache
- */
-@Override
-public void evict(K id);
-```
-
-**Time Complexity**
-- `put`: O(log n)
-- `get`: O(log n)
-- `evict`: O(log n)
-
-#### CacheNode Class
-
-Represents a key-value pair with a frequency counter.
+And measuring it is one more:
 
 ```java
-private static class CacheNode<K, V> {
-    K key;
-    V value;
-    int frequency;
-
-    /**
-     * Constructs a new node with the specified key and value. Initializes the frequency to 1.
-     *
-     * @param key   the key of the node
-     * @param value the value of the node
-     */
-    CacheNode(K key, V value);
-}
+MonitoredCache<Long, User> users = Caches.monitored(Caches.arc(10_000));
+// ... traffic ...
+users.stats().hitRate();    // 0.0 .. 1.0
 ```
 
-### Example
+## Which policy do I want
+
+| Your workload | Use |
+|---|---|
+| General purpose, nothing known about the pattern | `lru` |
+| A small set of keys is read far more often than the rest | `lfu` |
+| Mixed traffic where batch jobs scan through cold keys | `slru` or `twoQueue` |
+| The pattern changes over the day and you do not want to tune it | `arc` |
+| Entries go stale on their own | `expiring` |
+| Write once, read many, and the read path must stay free | `fifo` or `clock` |
+| A cyclic scan over data larger than the cache | `mru` |
+| A baseline the others have to beat | `random` |
+
+## Implementations
+
+| Class | Policy | put | get | Evicts |
+|---|---|---|---|---|
+| `LRULinkedHashMapCache` | Least recently used | O(1) | O(1) | The entry untouched for longest |
+| `LRUDoublyLinkedListCache` | Least recently used | O(1) | O(1) | The entry untouched for longest |
+| `LRUHashMapQueueCache` | Least recently used | O(n) | O(n) | The entry untouched for longest |
+| `MRUCache` | Most recently used | O(1) | O(1) | The entry touched last |
+| `LFUDoublyLinkedListCache` | Least frequently used | O(1) | O(1) | Lowest access count, LRU on a tie |
+| `LFUTreeMapCache` | Least frequently used | O(log n) | O(log n) | Lowest access count, LRU on a tie |
+| `FIFOCache` | First in first out | O(1) | O(1) | Oldest insertion, reads ignored |
+| `ClockCache` | Second chance | O(1) | O(1) | First unreferenced slot the hand meets |
+| `RandomReplacementCache` | Random | O(1) | O(1) | A uniformly random entry |
+| `SLRUCache` | Segmented LRU | O(1) | O(1) | The oldest probationary entry |
+| `TwoQueueCache` | 2Q | O(1) | O(1) | The FIFO buffer first, the main queue last |
+| `ARCCache` | Adaptive replacement | O(1) | O(1) | Recency or frequency, whichever the workload allows |
+| `TTLCache` | Time to live plus LRU | O(1)\* | O(1)\* | Expired entries first, then least recently used |
+
+\* amortised, expiration is handled lazily.
+
+Three of them implement the same policy on purpose. `LRULinkedHashMapCache` is twenty lines around
+an access ordered `LinkedHashMap`. `LRUDoublyLinkedListCache` does the bookkeeping by hand to show
+what the map hides. `LRUHashMapQueueCache` is the version most people write first, with a `HashMap`
+and a `Deque` of keys, and it is O(n) per hit because every access scans the deque to find the key.
+That is the contrast which explains why the node based variant stores the list node next to the
+value.
+
+## How the interesting ones work
+
+### SLRU: one access is not enough
+
+A new entry lands on probation. It reaches the protected segment only on its second access, and
+the protected segment demotes rather than evicts. A burst of one-off keys flows through probation
+and never touches the working set.
+
+```mermaid
+flowchart LR
+    miss([miss]) --> P[probationary LRU]
+    P -- "second access" --> T[protected LRU]
+    T -- "overflow: demote oldest" --> P
+    P -- "evict oldest" --> gone([dropped])
+```
+
+### 2Q: remember what you evicted
+
+Same idea, with a memory. Keys pushed out of the FIFO buffer are recorded in a ghost queue that
+holds keys without values, so it costs almost nothing. A key that comes back while its ghost is
+alive has proven it is worth keeping and enters the main queue directly.
+
+```mermaid
+flowchart LR
+    miss([miss]) --> A1in[A1in: FIFO, seen once]
+    A1in -- "evict, keep the key" --> A1out[A1out: ghosts, no values]
+    A1out -- "requested again" --> Am[Am: main LRU]
+    Am -- evict --> gone([dropped])
+    A1out -- "aged out" --> gone
+```
+
+### ARC: let the workload decide
+
+ARC runs recency and frequency side by side and moves the boundary between them itself. `T1` holds
+entries seen once, `T2` entries seen more often, and `B1` and `B2` remember what was just evicted
+from each. Every ghost hit is a signal: a hit in `B1` means recency was starved and its share
+grows, a hit in `B2` means frequency was starved and it shrinks. Nothing to configure.
+
+```mermaid
+flowchart LR
+    subgraph resident["resident, holds values"]
+        T1[T1: seen once]
+        T2[T2: seen twice or more]
+    end
+    subgraph ghost["ghosts, keys only"]
+        B1[B1]
+        B2[B2]
+    end
+    T1 -- "second access" --> T2
+    T1 -- evict --> B1
+    T2 -- evict --> B2
+    B1 -. "hit: grow the T1 target" .-> T2
+    B2 -. "hit: shrink the T1 target" .-> T2
+```
+
+### Clock: LRU for the price of one bit
+
+A ring of slots, one reference bit each. A read sets the bit. Eviction walks a hand around the
+ring, clearing bits, and takes the first entry whose bit was already clear. It approximates LRU
+without relinking anything on the read path, which is why operating systems use it for page
+replacement.
+
+### TTL: bounded by age as well as by count
+
+Expiration is lazy and checked on access, and `purgeExpired()` forces the sweep. The time source is
+injectable, so expiry is testable without sleeping:
 
 ```java
-public class Main {
-    public static void main(String[] args) {
-        LFUTreeMapCache<Integer, String> treeMapCache = new LFUTreeMapCache<>(3);
-        LFUDoublyLinkedListCache<Integer, String> linkedListCache = new LFUDoublyLinkedListCache<>(3);
-        
-        // Example usage for LFUTreeMapCache
-        treeMapCache.put(1, "one");
-        treeMapCache.put(2, "two");
-        treeMapCache.put(3, "three");
-        
-        System.out.println(treeMapCache.get(1)); // Outputs: one
-        
-        treeMapCache.put(4, "four"); // Evicts key 2, which is the least frequently used
-        
-        System.out.println(treeMapCache.get(2)); // Outputs: null (since key 2 has been evicted)
-        
-        treeMapCache.evict(3); // Manually evicts key 3
-        
-        System.out.println(treeMapCache.get(3)); // Outputs: null (since key 3 has been evicted)
+AtomicLong clock = new AtomicLong();
+TTLCache<Integer, String> cache = new TTLCache<>(100, Duration.ofSeconds(30), clock::get);
 
-        // Example usage for LFUDoublyLinkedListCache
-        linkedListCache.put(1, "one");
-        linkedListCache.put(2, "two");
-        linkedListCache.put(3, "three");
-        
-        System.out.println(linkedListCache.get(1)); // Outputs: one
-        
-        linkedListCache.put(4, "four"); // Evicts key 2, which is the least frequently used
-        
-        System.out.println(linkedListCache.get(2)); // Outputs: null (since key 2 has been evicted)
-        
-        linkedListCache.evict(3); // Manually evicts key 3
-        
-        System.out.println(linkedListCache.get(3)); // Outputs: null (since key 3 has been evicted)
-    }
-}
+cache.put(1, "one");
+clock.addAndGet(Duration.ofSeconds(31).toNanos());
+cache.get(1);   // null
 ```
 
-## MRU Cache Implementation
-
-### Overview
-
-MRU (Most Recently Used) Cache is a caching technique where the most recently used items are removed from the cache when it exceeds its predefined capacity. This approach is useful in scenarios where the least recently used items are more likely to be needed again soon.
-
-### MRUCache Class
-
-#### Description
-`MRUCache` is a Java implementation of an MRU Cache that uses a `HashMap` for quick access to cache entries and a `LinkedList` to maintain the order of entries based on their access time. This implementation ensures efficient retrieval, insertion, and eviction of cache entries based on their most recent usage.
-
-#### Constructor
-```java
-/**
- * Constructs an MRU Cache with the specified capacity.
- *
- * @param capacity the capacity of the cache
- */
-public MRUCache(int capacity);
-```
-
-#### Methods
-```java
-/**
- * Adds an item to the cache. If the cache is full, evicts the most recently used item.
- * If an item with the same key already exists, updates its value and marks it as recently used.
- *
- * @param id    the key with which the specified value is to be associated
- * @param value the value to be associated with the specified key
- */
-@Override
-public void put(T id, V value);
-
-/**
- * Retrieves the value associated with the specified key. If the key is found,
- * marks it as recently used.
- *
- * @param id the key whose associated value is to be returned
- * @return the value to which the specified key is mapped, or null if this cache contains no mapping for the key
- */
-@Override
-public V get(T id);
-
-/**
- * Evicts the item with the specified key from the cache.
- *
- * @param id the key whose mapping is to be removed from the cache
- */
-@Override
-public void evict(T id);
-```
-
-**Time Complexity**
-- `put`: O(1)
-- `get`: O(1)
-- `evict`: O(1)
-
-### Example
+## The interface
 
 ```java
-public class Main {
-    public static void main(String[] args) {
-        CacheService<Integer, String> cache = new MRUCache<>(3);
-        
-        cache.put(1, "one");
-        cache.put(2, "two");
-        cache.put(3, "three");
-        
-        System.out.println(cache.get(1)); // Outputs: one
-        
-        cache.put(4, "four"); // Evicts key 1, which is the most recently used
-        
-        System.out.println(cache.get(1)); // Outputs: null (since key 1 has been evicted)
-        System.out.println(cache.get(2)); // Outputs: two
-        System.out.println(cache.get(3)); // Outputs: three
-        System.out.println(cache.get(4)); // Outputs: four
-        
-        cache.evict(2); // Manually evicts key 2
-        
-        System.out.println(cache.get(2)); // Outputs: null (since key 2 has been evicted)
-    }
-}
+void put(K id, V value);        // insert or replace, may evict
+V get(K id);                    // null when absent, counts as an access
+void evict(K id);               // explicit removal
+int size();                     // current number of entries
+int capacity();                 // configured maximum
+boolean containsKey(K id);      // presence check, does not count as an access
+void clear();                   // drop everything
 ```
 
-### Testing
+Plus defaults built on those: `isEmpty`, `getOrDefault`, `find`, `computeIfAbsent`.
 
-The repository includes JUnit tests that validate the functionality of each cache implementation. These tests cover insertion, retrieval, eviction, and edge cases such as updating existing entries.
+- `null` is the miss marker, so a cache cannot store a `null` value.
+- `capacity` must be positive; the constructors reject anything else.
+- `containsKey` deliberately does not refresh recency, so metrics and assertions never disturb the
+  eviction order.
+- no implementation is thread safe on its own. `SynchronizedCache` serialises access,
+  `MonitoredCache` counts hits, misses, writes and evictions. They stack:
 
-### License
+```java
+MonitoredCache<Long, User> users =
+        Caches.monitored(Caches.synchronizedCache(Caches.arc(10_000)));
+```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE.md) file for details.
+## Design notes
 
-Feel free to fork and modify these implementations for your own use cases or contribute to enhance them further. If you have any questions or suggestions, please feel free to reach out or open an issue!
+The linked list based policies share one intrusive list in `org.cache.internal`. Each entry carries
+its own `prev` and `next` pointers plus the list it belongs to, so unlinking never searches, and
+linking the same entry into two lists fails fast instead of corrupting both quietly. That guard
+caught a real bug in `TTLCache` during development, where an entry was being tracked in an access
+ordered and an expiration ordered list at the same time. `org.cache.internal` is an implementation
+detail and carries no compatibility promise.
+
+`CacheContractTest` runs the same suite against all fifteen implementations and decorators: capacity
+is never exceeded, a manual eviction frees a slot instead of leaking one, the cache still works
+after `clear`, and a mixed workload never returns a value that belongs to a different key.
+
+## Building
+
+```bash
+./gradlew build          # compile, test, coverage check
+./gradlew benchmark      # the hit rate table above
+./gradlew javadoc        # API documentation into build/docs/javadoc
+```
+
+Requires JDK 17 or newer. CI builds against JDK 17 and 21 on Linux and JDK 17 on Windows. The build
+fails below 80 percent line coverage.
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or submit a pull request for any improvements or bug fixes.
+A new eviction policy should implement `CacheService`, come with its own test class, be listed in
+`Caches` and in the table above, and pass `CacheContractTest`. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Acknowledgments
+## License
 
-This implementation was inspired by various LFU and LRU cache algorithms and adapted for educational purposes. Special thanks to the open-source community for their contributions and ideas.
-
-## Contact
-
-For any questions or suggestions, please feel free to reach out or open an issue!
+MIT, see [LICENSE](LICENSE).
