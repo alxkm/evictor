@@ -1,6 +1,7 @@
 package org.cache;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -18,19 +19,19 @@ class LRUCacheTest {
 
     private static Stream<Arguments> lruCaches() {
         return Stream.of(
-                Arguments.of("LRUDoublyLinkedListCache",
-                        (IntFunction<CacheService<Integer, String>>) LRUDoublyLinkedListCache::new),
-                Arguments.of("LRUHashMapQueueCache",
-                        (IntFunction<CacheService<Integer, String>>) LRUHashMapQueueCache::new),
-                Arguments.of("LRULinkedHashMapCache",
-                        (IntFunction<CacheService<Integer, String>>) LRULinkedHashMapCache::new)
+                Arguments.of(Named.of("LRUDoublyLinkedListCache",
+                        (IntFunction<CacheService<Integer, String>>) LRUDoublyLinkedListCache::new)),
+                Arguments.of(Named.of("LRUHashMapQueueCache",
+                        (IntFunction<CacheService<Integer, String>>) LRUHashMapQueueCache::new)),
+                Arguments.of(Named.of("LRULinkedHashMapCache",
+                        (IntFunction<CacheService<Integer, String>>) LRULinkedHashMapCache::new))
         );
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("lruCaches")
     @DisplayName("evicts the oldest entry first")
-    void evictsOldestFirst(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void evictsOldestFirst(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
         cache.put(1, "one");
         cache.put(2, "two");
@@ -47,7 +48,7 @@ class LRUCacheTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("lruCaches")
     @DisplayName("a read protects an entry from the next eviction")
-    void readRefreshesRecency(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void readRefreshesRecency(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
         cache.put(1, "one");
         cache.put(2, "two");
@@ -65,7 +66,7 @@ class LRUCacheTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("lruCaches")
     @DisplayName("overwriting a key also refreshes its recency")
-    void writeRefreshesRecency(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void writeRefreshesRecency(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
         cache.put(1, "one");
         cache.put(2, "two");
@@ -81,7 +82,7 @@ class LRUCacheTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("lruCaches")
     @DisplayName("a manually evicted key frees a slot instead of triggering an eviction")
-    void manualEvictionFreesSlot(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void manualEvictionFreesSlot(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
         cache.put(1, "one");
         cache.put(2, "two");
@@ -99,7 +100,7 @@ class LRUCacheTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("lruCaches")
     @DisplayName("repeated eviction keeps the newest window of keys")
-    void keepsNewestWindow(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void keepsNewestWindow(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
 
         for (int i = 1; i <= 6; i++) {

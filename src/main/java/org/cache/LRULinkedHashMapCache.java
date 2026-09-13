@@ -35,7 +35,9 @@ public class LRULinkedHashMapCache<K, V> implements CacheService<K, V> {
         this.entries = new LinkedHashMap<>(capacity, LOAD_FACTOR, true) {
             @Override
             protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
-                return size() > LRULinkedHashMapCache.this.capacity;
+                // super.size() is the map's own size. Unqualified it would still bind to the
+                // inherited method, but the enclosing cache declares size() too, so spell it out.
+                return super.size() > LRULinkedHashMapCache.this.capacity;
             }
         };
     }

@@ -1,6 +1,7 @@
 package org.cache;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -41,13 +42,13 @@ class CacheContractTest {
     }
 
     private static Arguments factory(String name, IntFunction<CacheService<Integer, String>> constructor) {
-        return Arguments.of(name, constructor);
+        return Arguments.of(Named.of(name, constructor));
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("stores and returns values")
-    void storesAndReturnsValues(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void storesAndReturnsValues(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
 
         cache.put(1, "one");
@@ -63,7 +64,7 @@ class CacheContractTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("returns null for an unknown key")
-    void returnsNullForUnknownKey(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void returnsNullForUnknownKey(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
 
         assertNull(cache.get(42));
@@ -74,7 +75,7 @@ class CacheContractTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("replaces the value of an existing key without growing")
-    void replacesExistingValue(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void replacesExistingValue(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
 
         cache.put(1, "one");
@@ -87,20 +88,20 @@ class CacheContractTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("never holds more entries than its capacity")
-    void neverExceedsCapacity(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void neverExceedsCapacity(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(4);
 
         for (int i = 0; i < 200; i++) {
             cache.put(i, "value-" + i);
             cache.get(i % 7);
-            assertTrue(cache.size() <= 4, name + " grew to " + cache.size() + " entries");
+            assertTrue(cache.size() <= 4, cache + " grew to " + cache.size() + " entries");
         }
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("keeps the most recently written key resident")
-    void keepsLastWrittenKey(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void keepsLastWrittenKey(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
 
         for (int i = 0; i < 50; i++) {
@@ -113,7 +114,7 @@ class CacheContractTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("removes a key on evict")
-    void removesKeyOnEvict(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void removesKeyOnEvict(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
         cache.put(1, "one");
         cache.put(2, "two");
@@ -129,7 +130,7 @@ class CacheContractTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("ignores evict of an unknown key")
-    void ignoresEvictOfUnknownKey(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void ignoresEvictOfUnknownKey(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
         cache.put(1, "one");
 
@@ -142,7 +143,7 @@ class CacheContractTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("accepts writes again after every key was evicted")
-    void acceptsWritesAfterFullManualEviction(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void acceptsWritesAfterFullManualEviction(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
         cache.put(1, "one");
         cache.put(2, "two");
@@ -164,7 +165,7 @@ class CacheContractTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("clear drops every entry and leaves the cache usable")
-    void clearDropsEverything(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void clearDropsEverything(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
         cache.put(1, "one");
         cache.put(2, "two");
@@ -182,7 +183,7 @@ class CacheContractTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("works with a capacity of one")
-    void worksWithCapacityOfOne(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void worksWithCapacityOfOne(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(1);
 
         cache.put(1, "one");
@@ -196,7 +197,7 @@ class CacheContractTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("rejects a non-positive capacity")
-    void rejectsNonPositiveCapacity(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void rejectsNonPositiveCapacity(IntFunction<CacheService<Integer, String>> factory) {
         assertThrows(IllegalArgumentException.class, () -> factory.apply(0));
         assertThrows(IllegalArgumentException.class, () -> factory.apply(-1));
     }
@@ -204,7 +205,7 @@ class CacheContractTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("containsKey does not change the eviction order")
-    void containsKeyIsNotAnAccess(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void containsKeyIsNotAnAccess(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(2);
         cache.put(1, "one");
         cache.put(2, "two");
@@ -217,7 +218,7 @@ class CacheContractTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("getOrDefault falls back only on a miss")
-    void getOrDefaultFallsBackOnMiss(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void getOrDefaultFallsBackOnMiss(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(2);
         cache.put(1, "one");
 
@@ -228,7 +229,7 @@ class CacheContractTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("find wraps the lookup result")
-    void findWrapsResult(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void findWrapsResult(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(2);
         cache.put(1, "one");
 
@@ -239,7 +240,7 @@ class CacheContractTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("computeIfAbsent loads a missing key once and caches it")
-    void computeIfAbsentLoadsOnce(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void computeIfAbsentLoadsOnce(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
         int[] loads = {0};
 
@@ -260,7 +261,7 @@ class CacheContractTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("computeIfAbsent does not store a null result")
-    void computeIfAbsentIgnoresNull(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void computeIfAbsentIgnoresNull(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
 
         assertNull(cache.computeIfAbsent(1, key -> null));
@@ -270,14 +271,14 @@ class CacheContractTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("reports the configured capacity")
-    void reportsCapacity(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void reportsCapacity(IntFunction<CacheService<Integer, String>> factory) {
         assertEquals(7, factory.apply(7).capacity());
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("allCaches")
     @DisplayName("survives a mixed workload without losing consistency")
-    void survivesMixedWorkload(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void survivesMixedWorkload(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(8);
 
         for (int i = 0; i < 2_000; i++) {
@@ -295,7 +296,7 @@ class CacheContractTest {
         for (int key = 0; key < 25; key++) {
             String value = cache.get(key);
             if (value != null) {
-                assertEquals("value-" + key, value, name + " returned a stale value for key " + key);
+                assertEquals("value-" + key, value, "stale value for key " + key);
             }
         }
     }

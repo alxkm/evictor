@@ -1,6 +1,7 @@
 package org.cache;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -19,17 +20,17 @@ class LFUCacheTest {
 
     private static Stream<Arguments> lfuCaches() {
         return Stream.of(
-                Arguments.of("LFUDoublyLinkedListCache",
-                        (IntFunction<CacheService<Integer, String>>) LFUDoublyLinkedListCache::new),
-                Arguments.of("LFUTreeMapCache",
-                        (IntFunction<CacheService<Integer, String>>) LFUTreeMapCache::new)
+                Arguments.of(Named.of("LFUDoublyLinkedListCache",
+                        (IntFunction<CacheService<Integer, String>>) LFUDoublyLinkedListCache::new)),
+                Arguments.of(Named.of("LFUTreeMapCache",
+                        (IntFunction<CacheService<Integer, String>>) LFUTreeMapCache::new))
         );
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("lfuCaches")
     @DisplayName("evicts the entry with the lowest access count")
-    void evictsLeastFrequent(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void evictsLeastFrequent(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
         cache.put(1, "one");
         cache.put(2, "two");
@@ -50,7 +51,7 @@ class LFUCacheTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("lfuCaches")
     @DisplayName("breaks a frequency tie by evicting the least recently used entry")
-    void breaksTieByRecency(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void breaksTieByRecency(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
         cache.put(1, "one");
         cache.put(2, "two");
@@ -68,7 +69,7 @@ class LFUCacheTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("lfuCaches")
     @DisplayName("overwriting a value counts as an access")
-    void writeCountsAsAccess(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void writeCountsAsAccess(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
         cache.put(1, "one");
         cache.put(2, "two");
@@ -84,7 +85,7 @@ class LFUCacheTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("lfuCaches")
     @DisplayName("a frequently used entry outlives a burst of new keys")
-    void hotEntrySurvivesBurst(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void hotEntrySurvivesBurst(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
         cache.put(1, "hot");
         for (int i = 0; i < 10; i++) {
@@ -101,8 +102,7 @@ class LFUCacheTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("lfuCaches")
     @DisplayName("evicting the last entry of the lowest frequency leaves the cache usable")
-    void evictingLowestFrequencyBucketKeepsCacheUsable(String name,
-                                                       IntFunction<CacheService<Integer, String>> factory) {
+    void evictingLowestFrequencyBucketKeepsCacheUsable(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(3);
         cache.put(1, "one");
         cache.put(2, "two");
@@ -126,7 +126,7 @@ class LFUCacheTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("lfuCaches")
     @DisplayName("frequency counters are dropped together with the entry")
-    void frequencyIsResetOnReinsert(String name, IntFunction<CacheService<Integer, String>> factory) {
+    void frequencyIsResetOnReinsert(IntFunction<CacheService<Integer, String>> factory) {
         CacheService<Integer, String> cache = factory.apply(2);
         cache.put(1, "one");
         for (int i = 0; i < 5; i++) {
