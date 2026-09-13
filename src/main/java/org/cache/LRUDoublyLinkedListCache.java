@@ -1,127 +1,96 @@
 package org.cache;
 
+import org.cache.internal.Entry;
+import org.cache.internal.EntryList;
+import org.cache.internal.Preconditions;
+
 import java.util.HashMap;
+import java.util.Map;
 
 /**
- * LRU (Least Recently Used) Cache implementation using a custom doubly linked list and {@link HashMap}.
- * This cache automatically removes the least recently used entries when the capacity is exceeded.
+ * LRU (Least Recently Used) cache built on a {@link HashMap} plus an intrusive doubly linked list.
+ *
+ * <p>The map gives constant time lookup by key, the list keeps the entries ordered from the most
+ * recently used at the front to the least recently used at the back. Every access moves the entry
+ * to the front, so the eviction candidate is always the tail.
+ *
+ * <p>All operations run in O(1). Not thread safe.
  *
  * @param <K> the type of keys maintained by this cache
  * @param <V> the type of mapped values
  */
 public class LRUDoublyLinkedListCache<K, V> implements CacheService<K, V> {
 
-    /**
-     * The maximum number of elements the cache can hold.
-     */
     private final int capacity;
+    private final Map<K, Entry<K, V>> cacheMap;
+    private final EntryList<K, V> accessOrder = new EntryList<>();
 
     /**
-     * The HashMap that stores the cache entries.
-     */
-    private final HashMap<K, Node<K, V>> cacheMap;
-
-    /**
-     * Dummy head of the doubly linked list.
-     */
-    private Node<K, V> head;
-
-    /**
-     * Dummy tail of the doubly linked list.
-     */
-    private Node<K, V> tail;
-
-    /**
-     * Constructs a new LRUCacheNodeBased with the specified capacity.
+     * Creates a cache holding at most {@code capacity} entries.
      *
-     * @param capacity the maximum number of elements the cache can hold
+     * @param capacity the maximum number of entries, must be positive
+     * @throws IllegalArgumentException when the capacity is not positive
      */
     public LRUDoublyLinkedListCache(int capacity) {
-        this.capacity = capacity;
+        this.capacity = Preconditions.positiveCapacity(capacity);
         this.cacheMap = new HashMap<>();
-        this.head = new Node<>(null, null);
-        this.tail = new Node<>(null, null);
-        head.next = tail;
-        tail.prev = head;
     }
 
-    /**
-     * Inserts the specified key-value pair into the cache.
-     * If the cache previously contained a mapping for the key, the old value is replaced.
-     * If inserting the new pair exceeds the cache's capacity, the least recently used entry is removed.
-     *
-     * @param id    the key with which the specified value is to be associated
-     * @param value the value to be associated with the specified key
-     */
     @Override
     public void put(K id, V value) {
-        if (cacheMap.containsKey(id)) {
-            Node<K, V> node = cacheMap.get(id);
-            node.value = value;
-            removeNode(node);
-            addNodeToHead(node);
-        } else {
-            if (cacheMap.size() == capacity) {
-                cacheMap.remove(tail.prev.key);
-                removeNode(tail.prev);
-            }
-            Node<K, V> newNode = new Node<>(id, value);
-            cacheMap.put(id, newNode);
-            addNodeToHead(newNode);
+        Entry<K, V> existing = cacheMap.get(id);
+        if (existing != null) {
+            existing.value = value;
+            accessOrder.moveToFirst(existing);
+            return;
         }
+        if (cacheMap.size() == capacity) {
+            Entry<K, V> evicted = accessOrder.pollLast();
+            if (evicted != null) {
+                cacheMap.remove(evicted.key);
+            }
+        }
+        Entry<K, V> entry = new Entry<>(id, value);
+        cacheMap.put(id, entry);
+        accessOrder.addFirst(entry);
     }
 
-    /**
-     * Returns the value to which the specified key is mapped, or {@code null} if this cache contains no mapping for the key.
-     * Accessing the key marks it as recently used.
-     *
-     * @param id the key whose associated value is to be returned
-     * @return the value to which the specified key is mapped, or {@code null} if this cache contains no mapping for the key
-     */
     @Override
     public V get(K id) {
-        if (cacheMap.containsKey(id)) {
-            Node<K, V> node = cacheMap.get(id);
-            removeNode(node);
-            addNodeToHead(node);
-            return node.value;
+        Entry<K, V> entry = cacheMap.get(id);
+        if (entry == null) {
+            return null;
         }
-        return null;
+        accessOrder.moveToFirst(entry);
+        return entry.value;
     }
 
-    /**
-     * Removes the mapping for a key from this cache if it is present.
-     *
-     * @param id the key whose mapping is to be removed from the cache
-     */
     @Override
     public void evict(K id) {
-        if (cacheMap.containsKey(id)) {
-            Node<K, V> node = cacheMap.get(id);
-            removeNode(node);
-            cacheMap.remove(id);
+        Entry<K, V> entry = cacheMap.remove(id);
+        if (entry != null) {
+            accessOrder.remove(entry);
         }
     }
 
-    /**
-     * Adds the specified node to the head of the doubly linked list.
-     *
-     * @param node the node to be added to the head of the list
-     */
-    private void addNodeToHead(Node<K, V> node) {
-        node.next = head.next;
-        node.prev = head;
-        head.next.prev = node;
-        head.next = node;
+    @Override
+    public int size() {
+        return cacheMap.size();
     }
 
-    /**
-     * Removes the specified node from the doubly linked list.
-     *
-     * @param node the node to be removed from the list
-     */
-    private void removeNode(Node<K, V> node) {
-        node.prev.next = node.next;
-        node.next.prev = node.prev;
+    @Override
+    public int capacity() {
+        return capacity;
+    }
+
+    @Override
+    public boolean containsKey(K id) {
+        return cacheMap.containsKey(id);
+    }
+
+    @Override
+    public void clear() {
+        cacheMap.clear();
+        accessOrder.clear();
     }
 }

@@ -8,22 +8,25 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * MRU (Most Recently Used) cache: the entry touched last is the first one to go.
+ * FIFO (First In First Out) cache: the entry that was inserted first is evicted first.
  *
- * <p>The policy looks backwards at first sight, and for a general workload it is. It pays off for
- * cyclic scans over a data set larger than the cache, where LRU evicts exactly the block that is
- * needed next. Database buffer pools use it for that reason.
+ * <p>Reads do not change the eviction order, which is the whole point of the policy. It ignores
+ * how useful an entry is, so its hit rate is below LRU on most workloads, but it needs no
+ * bookkeeping on the read path at all. That makes it a reasonable pick for caches that are
+ * written once and read many times, and a common baseline when comparing policies.
+ *
+ * <p>Re-inserting an existing key replaces the value and keeps the original insertion position.
  *
  * <p>All operations run in O(1). Not thread safe.
  *
  * @param <K> the type of keys maintained by this cache
  * @param <V> the type of mapped values
  */
-public class MRUCache<K, V> implements CacheService<K, V> {
+public class FIFOCache<K, V> implements CacheService<K, V> {
 
     private final int capacity;
     private final Map<K, Entry<K, V>> cache;
-    private final EntryList<K, V> accessOrder = new EntryList<>();
+    private final EntryList<K, V> insertionOrder = new EntryList<>();
 
     /**
      * Creates a cache holding at most {@code capacity} entries.
@@ -31,9 +34,9 @@ public class MRUCache<K, V> implements CacheService<K, V> {
      * @param capacity the maximum number of entries, must be positive
      * @throws IllegalArgumentException when the capacity is not positive
      */
-    public MRUCache(int capacity) {
+    public FIFOCache(int capacity) {
         this.capacity = Preconditions.positiveCapacity(capacity);
-        this.cache = new HashMap<>(capacity);
+        this.cache = new HashMap<>();
     }
 
     @Override
@@ -41,35 +44,30 @@ public class MRUCache<K, V> implements CacheService<K, V> {
         Entry<K, V> existing = cache.get(id);
         if (existing != null) {
             existing.value = value;
-            accessOrder.moveToFirst(existing);
             return;
         }
         if (cache.size() == capacity) {
-            Entry<K, V> victim = accessOrder.pollFirst();
+            Entry<K, V> victim = insertionOrder.pollLast();
             if (victim != null) {
                 cache.remove(victim.key);
             }
         }
         Entry<K, V> entry = new Entry<>(id, value);
         cache.put(id, entry);
-        accessOrder.addFirst(entry);
+        insertionOrder.addFirst(entry);
     }
 
     @Override
     public V get(K id) {
         Entry<K, V> entry = cache.get(id);
-        if (entry == null) {
-            return null;
-        }
-        accessOrder.moveToFirst(entry);
-        return entry.value;
+        return entry == null ? null : entry.value;
     }
 
     @Override
     public void evict(K id) {
         Entry<K, V> entry = cache.remove(id);
         if (entry != null) {
-            accessOrder.remove(entry);
+            insertionOrder.remove(entry);
         }
     }
 
@@ -91,6 +89,6 @@ public class MRUCache<K, V> implements CacheService<K, V> {
     @Override
     public void clear() {
         cache.clear();
-        accessOrder.clear();
+        insertionOrder.clear();
     }
 }
