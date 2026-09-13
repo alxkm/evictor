@@ -1,19 +1,52 @@
 plugins {
-    id 'java'
+    id 'java-library'
+    id 'jacoco'
 }
 
 group = 'org.cache'
-version = '1.0-SNAPSHOT'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    withSourcesJar()
+    withJavadocJar()
+}
 
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation platform('org.junit:junit-bom:5.10.2')
     testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-Xlint:all' << '-Xlint:-serial'
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    options.addStringOption('Xdoclint:none', '-quiet')
 }
 
 test {
     useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+    finalizedBy jacocoTestReport
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+    }
 }

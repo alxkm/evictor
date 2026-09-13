@@ -1,0 +1,37 @@
+name: Bug report
+description: Report incorrect behaviour in one of the cache implementations
+labels: [ "bug" ]
+body:
+  - type: input
+    id: implementation
+    attributes:
+      label: Cache implementation
+      description: Which class is affected, for example LFUDoublyLinkedListCache
+      placeholder: LRUDoublyLinkedListCache
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproducer
+      description: A short snippet or a failing test
+      render: java
+    validations:
+      required: true
+  - type: input
+    id: java
+    attributes:
+      label: Java version
+      placeholder: "17"
