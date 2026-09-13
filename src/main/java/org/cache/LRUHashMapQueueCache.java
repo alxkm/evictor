@@ -1,94 +1,94 @@
 package org.cache;
 
+import org.cache.internal.Preconditions;
+
+import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.Map;
 
+/**
+ * LRU (Least Recently Used) cache built on a {@link HashMap} for the values and a {@link Deque}
+ * for the access order.
+ *
+ * <p>This is the straightforward variant: the deque holds the keys with the most recently used
+ * one at the front, and every access moves the key back to the front. The catch is that moving a
+ * key means removing it from the middle of the deque, which is a linear scan. It is kept here as
+ * a reference point against {@link LRUDoublyLinkedListCache}, which pays constant time for the
+ * same job by storing the list node next to the value.
+ *
+ * <p>Complexity: {@code put} and {@code get} are O(n) on a hit because of the deque scan,
+ * {@code put} of a new key is O(1) amortised. Not thread safe.
+ *
+ * @param <K> the type of keys maintained by this cache
+ * @param <V> the type of mapped values
+ */
 public class LRUHashMapQueueCache<K, V> implements CacheService<K, V> {
+
     private final int capacity;
     private final Map<K, V> cacheMap;
-    private final Deque<K> deque;
+    private final Deque<K> accessOrder;
 
     /**
-     * Constructor to initialize LRU Cache with the specified capacity.
+     * Creates a cache holding at most {@code capacity} entries.
      *
-     * @param capacity the maximum number of elements the cache can hold
+     * @param capacity the maximum number of entries, must be positive
      * @throws IllegalArgumentException when the capacity is not positive
      */
     public LRUHashMapQueueCache(int capacity) {
-        if (capacity <= 0) {
-            throw new IllegalArgumentException("capacity must be positive, got " + capacity);
-        }
-        this.capacity = capacity;
+        this.capacity = Preconditions.positiveCapacity(capacity);
         this.cacheMap = new HashMap<>();
-        this.deque = new LinkedList<>();
+        this.accessOrder = new ArrayDeque<>(capacity);
     }
 
-    /**
-     * Adds an element to the cache. If the element already exists, it updates the value and
-     * moves the element to the front of the deque. If the cache is full, it removes the least
-     * recently used element before adding the new element.
-     *
-     * @param id the key of the element to be added
-     * @param value the value of the element to be added
-     */
     @Override
     public void put(K id, V value) {
         if (cacheMap.containsKey(id)) {
-            deque.remove(id);
-        } else {
-            if (deque.size() == capacity) {
-                K leastUsedKey = deque.removeLast();
-                cacheMap.remove(leastUsedKey);
-            }
+            accessOrder.remove(id);
+        } else if (cacheMap.size() == capacity) {
+            K leastUsedKey = accessOrder.removeLast();
+            cacheMap.remove(leastUsedKey);
         }
-        deque.addFirst(id);
+        accessOrder.addFirst(id);
         cacheMap.put(id, value);
     }
 
-    /**
-     * Retrieves an element from the cache. If the element exists, it moves the element to the front
-     * of the deque to mark it as recently used.
-     *
-     * @param id the key of the element to be retrieved
-     * @return the value of the element if it exists, otherwise null
-     */
     @Override
     public V get(K id) {
-        if (!cacheMap.containsKey(id)) {
+        V value = cacheMap.get(id);
+        if (value == null) {
             return null;
         }
-        deque.remove(id);
-        deque.addFirst(id);
-        return cacheMap.get(id);
+        accessOrder.remove(id);
+        accessOrder.addFirst(id);
+        return value;
     }
 
-    /**
-     * Evicts an element from the cache based on the key.
-     *
-     * @param id the key of the element to be evicted
-     */
     @Override
     public void evict(K id) {
-        if (cacheMap.containsKey(id)) {
-            deque.remove(id);
-            cacheMap.remove(id);
+        if (cacheMap.remove(id) != null) {
+            accessOrder.remove(id);
         }
     }
 
-    // Main method to test the LRUCacheService implementation
-    public static void main(String[] args) {
-        CacheService<Integer, String> cache = new LRUHashMapQueueCache<>(3);
-        cache.put(1, "one");
-        cache.put(2, "two");
-        cache.put(3, "three");
-        System.out.println(cache.get(1)); // Output: one
-        cache.put(4, "four");
-        System.out.println(cache.get(2)); // Output: null (evicted)
-        cache.put(5, "five");
-        System.out.println(cache.get(3)); // Output: null (evicted)
-        System.out.println(cache.get(4)); // Output: four
-        System.out.println(cache.get(5)); // Output: five
+    @Override
+    public int size() {
+        return cacheMap.size();
+    }
+
+    @Override
+    public int capacity() {
+        return capacity;
+    }
+
+    @Override
+    public boolean containsKey(K id) {
+        return cacheMap.containsKey(id);
+    }
+
+    @Override
+    public void clear() {
+        cacheMap.clear();
+        accessOrder.clear();
     }
 }

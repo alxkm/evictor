@@ -1,12 +1,24 @@
 package org.cache;
 
+import org.cache.internal.Entry;
+import org.cache.internal.EntryList;
+import org.cache.internal.Preconditions;
+
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * A class representing a Least Frequently Used (LFU) Cache using a HashMap and a TreeMap.
+ * LFU (Least Frequently Used) cache that keeps the frequency buckets in a {@link TreeMap}.
+ *
+ * <p>Compared with {@link LFUDoublyLinkedListCache} this variant does not track the lowest
+ * frequency by hand: the sorted map always exposes it through {@code firstEntry}. That costs a
+ * logarithmic factor on every operation but removes the trickiest part of the LFU bookkeeping,
+ * which makes it a useful reference implementation. Within one frequency the entries are kept in
+ * recency order, so ties are broken by evicting the least recently used entry.
+ *
+ * <p>Complexity: {@code put}, {@code get} and {@code evict} are O(log n) where n is the number of
+ * distinct frequencies. Not thread safe.
  *
  * @param <K> the type of keys maintained by this cache
  * @param <V> the type of mapped values
@@ -14,129 +26,109 @@ import java.util.TreeMap;
 public class LFUTreeMapCache<K, V> implements CacheService<K, V> {
 
     private final int capacity;
-    private int size;
-    private final Map<K, CacheNode<K, V>> cache;
-    private final TreeMap<Integer, Map<K, CacheNode<K, V>>> frequencyMap;
+    private final Map<K, Entry<K, V>> cache;
+    private final TreeMap<Integer, EntryList<K, V>> frequencyBuckets;
 
     /**
-     * Constructs an LFU Cache with the specified capacity.
+     * Creates a cache holding at most {@code capacity} entries.
      *
-     * @param capacity the capacity of the cache
+     * @param capacity the maximum number of entries, must be positive
      * @throws IllegalArgumentException when the capacity is not positive
      */
     public LFUTreeMapCache(int capacity) {
-        if (capacity <= 0) {
-            throw new IllegalArgumentException("capacity must be positive, got " + capacity);
-        }
-        this.capacity = capacity;
-        this.size = 0;
+        this.capacity = Preconditions.positiveCapacity(capacity);
         this.cache = new HashMap<>();
-        this.frequencyMap = new TreeMap<>();
+        this.frequencyBuckets = new TreeMap<>();
     }
 
-    /**
-     * Adds an item to the cache. If the cache is full, evicts the least frequently used item.
-     * If an item with the same key already exists, updates its value and frequency.
-     *
-     * @param id    the key with which the specified value is to be associated
-     * @param value the value to be associated with the specified key
-     */
     @Override
     public void put(K id, V value) {
-        if (cache.containsKey(id)) {
-            CacheNode<K, V> node = cache.get(id);
-            node.value = value;
-            get(id); // Increase frequency
-        } else {
-            if (size == capacity) {
-                // Evict the least frequently used item
-                Map.Entry<Integer, Map<K, CacheNode<K, V>>> entry = frequencyMap.firstEntry();
-                Map<K, CacheNode<K, V>> nodes = entry.getValue();
-                CacheNode<K, V> nodeToEvict = nodes.values().iterator().next();
-                nodes.remove(nodeToEvict.key);
-                if (nodes.isEmpty()) {
-                    frequencyMap.pollFirstEntry();
-                }
-                cache.remove(nodeToEvict.key);
-                size--;
-            }
-            // Add new item
-            CacheNode<K, V> newNode = new CacheNode<>(id, value);
-            cache.put(id, newNode);
-            frequencyMap.computeIfAbsent(1, k -> new LinkedHashMap<>()).put(id, newNode);
-            size++;
+        Entry<K, V> existing = cache.get(id);
+        if (existing != null) {
+            existing.value = value;
+            touch(existing);
+            return;
         }
+        if (cache.size() == capacity) {
+            evictLeastFrequent();
+        }
+        Entry<K, V> entry = new Entry<>(id, value);
+        cache.put(id, entry);
+        bucket(1).addFirst(entry);
     }
 
-    /**
-     * Retrieves the value associated with the specified key. If the key is found,
-     * increases its frequency.
-     *
-     * @param id the key whose associated value is to be returned
-     * @return the value to which the specified key is mapped, or null if this cache contains no mapping for the key
-     */
     @Override
     public V get(K id) {
-        if (!cache.containsKey(id)) return null;
-
-        CacheNode<K, V> node = cache.get(id);
-        int currentFreq = node.frequency;
-        Map<K, CacheNode<K, V>> nodes = frequencyMap.get(currentFreq);
-        nodes.remove(id);
-
-        if (nodes.isEmpty()) {
-            frequencyMap.remove(currentFreq);
+        Entry<K, V> entry = cache.get(id);
+        if (entry == null) {
+            return null;
         }
-
-        node.frequency++;
-        frequencyMap.computeIfAbsent(node.frequency, k -> new LinkedHashMap<>()).put(id, node);
-        return node.value;
+        touch(entry);
+        return entry.value;
     }
 
-    /**
-     * Evicts the item with the specified key from the cache.
-     *
-     * @param id the key whose mapping is to be removed from the cache
-     */
     @Override
     public void evict(K id) {
-        if (!cache.containsKey(id)) return;
-
-        CacheNode<K, V> node = cache.get(id);
-        int currentFreq = node.frequency;
-        Map<K, CacheNode<K, V>> nodes = frequencyMap.get(currentFreq);
-        nodes.remove(id);
-
-        if (nodes.isEmpty()) {
-            frequencyMap.remove(currentFreq);
+        Entry<K, V> entry = cache.remove(id);
+        if (entry != null) {
+            unlink(entry);
         }
-
-        cache.remove(id);
-        size--;
     }
 
-    /**
-     * Node class representing a key-value pair with a frequency counter.
-     *
-     * @param <T> the type of key
-     * @param <V> the type of value
-     */
-    private static class CacheNode<T, V> {
-        T key;
-        V value;
-        int frequency;
+    @Override
+    public int size() {
+        return cache.size();
+    }
 
-        /**
-         * Constructs a new node with the specified key and value. Initializes the frequency to 1.
-         *
-         * @param key   the key of the node
-         * @param value the value of the node
-         */
-        CacheNode(T key, V value) {
-            this.key = key;
-            this.value = value;
-            this.frequency = 1;
+    @Override
+    public int capacity() {
+        return capacity;
+    }
+
+    @Override
+    public boolean containsKey(K id) {
+        return cache.containsKey(id);
+    }
+
+    @Override
+    public void clear() {
+        cache.clear();
+        frequencyBuckets.clear();
+    }
+
+    private void touch(Entry<K, V> entry) {
+        unlink(entry);
+        entry.frequency++;
+        bucket(entry.frequency).addFirst(entry);
+    }
+
+    private void unlink(Entry<K, V> entry) {
+        EntryList<K, V> list = frequencyBuckets.get(entry.frequency);
+        if (list == null) {
+            return;
         }
+        list.remove(entry);
+        if (list.isEmpty()) {
+            frequencyBuckets.remove(entry.frequency);
+        }
+    }
+
+    private void evictLeastFrequent() {
+        Map.Entry<Integer, EntryList<K, V>> lowest = frequencyBuckets.firstEntry();
+        if (lowest == null) {
+            return;
+        }
+        EntryList<K, V> list = lowest.getValue();
+        Entry<K, V> victim = list.pollLast();
+        if (victim != null) {
+            cache.remove(victim.key);
+        }
+        if (list.isEmpty()) {
+            frequencyBuckets.remove(lowest.getKey());
+        }
+    }
+
+    private EntryList<K, V> bucket(int frequency) {
+        return frequencyBuckets.computeIfAbsent(frequency, unused -> new EntryList<>());
     }
 }
-

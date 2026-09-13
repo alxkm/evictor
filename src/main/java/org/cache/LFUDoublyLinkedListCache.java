@@ -1,10 +1,25 @@
 package org.cache;
 
+import org.cache.internal.Entry;
+import org.cache.internal.EntryList;
+import org.cache.internal.Preconditions;
+
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * A class representing a Least Frequently Used (LFU) Cache using a doubly linked list.
+ * LFU (Least Frequently Used) cache with constant time operations.
+ *
+ * <p>Two maps carry the state: one from key to entry for lookups, and one from an access count to
+ * the list of entries with exactly that count. Each bucket keeps its entries in recency order, so
+ * when several entries share the lowest frequency the least recently used of them is evicted.
+ * The lowest populated frequency is tracked incrementally, which is what keeps eviction O(1).
+ *
+ * <p>Complexity: {@code put}, {@code get} and {@code evict} are O(1). The only exception is an
+ * eviction that directly follows an explicit {@link #evict(Object)} which emptied the lowest
+ * bucket. That case needs a one off rescan of the populated frequencies.
+ *
+ * <p>Not thread safe.
  *
  * @param <K> the type of keys maintained by this cache
  * @param <V> the type of mapped values
@@ -12,204 +27,125 @@ import java.util.Map;
 public class LFUDoublyLinkedListCache<K, V> implements CacheService<K, V> {
 
     private final int capacity;
-    private int size;
-    private final Map<K, Node<K, V>> cache;
-    private final Map<Integer, DoublyLinkedList<K, V>> frequencyMap;
+    private final Map<K, Entry<K, V>> cache;
+    private final Map<Integer, EntryList<K, V>> frequencyBuckets;
     private int minFrequency;
 
     /**
-     * Constructs an LFU Cache with the specified capacity.
+     * Creates a cache holding at most {@code capacity} entries.
      *
-     * @param capacity the capacity of the cache
+     * @param capacity the maximum number of entries, must be positive
      * @throws IllegalArgumentException when the capacity is not positive
      */
     public LFUDoublyLinkedListCache(int capacity) {
-        if (capacity <= 0) {
-            throw new IllegalArgumentException("capacity must be positive, got " + capacity);
-        }
-        this.capacity = capacity;
-        this.size = 0;
+        this.capacity = Preconditions.positiveCapacity(capacity);
         this.cache = new HashMap<>();
-        this.frequencyMap = new HashMap<>();
-        this.minFrequency = 0;
+        this.frequencyBuckets = new HashMap<>();
     }
 
-    /**
-     * Adds an item to the cache. If the cache is full, evicts the least frequently used item.
-     * If an item with the same key already exists, updates its value and frequency.
-     *
-     * @param id    the key with which the specified value is to be associated
-     * @param value the value to be associated with the specified key
-     */
     @Override
     public void put(K id, V value) {
-        if (cache.containsKey(id)) {
-            Node<K, V> node = cache.get(id);
-            node.value = value;
-            get(id); // Increase frequency
-        } else {
-            if (size == capacity) {
-                evictLeastFrequent();
-            }
-            // Add new item
-            Node<K, V> newNode = new Node<>(id, value);
-            cache.put(id, newNode);
-            frequencyMap.computeIfAbsent(1, k -> new DoublyLinkedList<>()).add(newNode);
-            minFrequency = 1;
-            size++;
+        Entry<K, V> existing = cache.get(id);
+        if (existing != null) {
+            existing.value = value;
+            touch(existing);
+            return;
         }
+        if (cache.size() == capacity) {
+            evictLeastFrequent();
+        }
+        Entry<K, V> entry = new Entry<>(id, value);
+        cache.put(id, entry);
+        bucket(1).addFirst(entry);
+        minFrequency = 1;
     }
 
-    /**
-     * Retrieves the value associated with the specified key. If the key is found,
-     * increases its frequency.
-     *
-     * @param id the key whose associated value is to be returned
-     * @return the value to which the specified key is mapped, or null if this cache contains no mapping for the key
-     */
     @Override
     public V get(K id) {
-        if (!cache.containsKey(id)) return null;
-
-        Node<K, V> node = cache.get(id);
-        int currentFreq = node.frequency;
-        DoublyLinkedList<K, V> list = frequencyMap.get(currentFreq);
-        list.remove(node);
-
-        if (list.size == 0) {
-            frequencyMap.remove(currentFreq);
-            if (currentFreq == minFrequency) {
-                minFrequency++;
-            }
+        Entry<K, V> entry = cache.get(id);
+        if (entry == null) {
+            return null;
         }
-
-        node.frequency++;
-        frequencyMap.computeIfAbsent(node.frequency, k -> new DoublyLinkedList<>()).add(node);
-        return node.value;
+        touch(entry);
+        return entry.value;
     }
 
-    /**
-     * Evicts the item with the specified key from the cache.
-     *
-     * @param id the key whose mapping is to be removed from the cache
-     */
     @Override
     public void evict(K id) {
-        if (!cache.containsKey(id)) return;
-
-        Node<K, V> node = cache.get(id);
-        int currentFreq = node.frequency;
-        DoublyLinkedList<K, V> list = frequencyMap.get(currentFreq);
-        list.remove(node);
-        cache.remove(id);
-
-        if (list.size == 0) {
-            frequencyMap.remove(currentFreq);
+        Entry<K, V> entry = cache.remove(id);
+        if (entry != null) {
+            unlink(entry);
         }
-
-        size--;
     }
 
-    /**
-     * Removes the least frequently used item, breaking a tie by recency.
-     */
-    private void evictLeastFrequent() {
-        DoublyLinkedList<K, V> list = frequencyMap.get(minFrequency);
+    @Override
+    public int size() {
+        return cache.size();
+    }
+
+    @Override
+    public int capacity() {
+        return capacity;
+    }
+
+    @Override
+    public boolean containsKey(K id) {
+        return cache.containsKey(id);
+    }
+
+    @Override
+    public void clear() {
+        cache.clear();
+        frequencyBuckets.clear();
+        minFrequency = 0;
+    }
+
+    /** Moves the entry into the next frequency bucket and keeps the minimum frequency in sync. */
+    private void touch(Entry<K, V> entry) {
+        int currentFrequency = entry.frequency;
+        unlink(entry);
+        entry.frequency = currentFrequency + 1;
+        bucket(entry.frequency).addFirst(entry);
+        if (currentFrequency == minFrequency && !frequencyBuckets.containsKey(currentFrequency)) {
+            minFrequency = entry.frequency;
+        }
+    }
+
+    /** Removes the entry from its bucket and drops the bucket once it runs empty. */
+    private void unlink(Entry<K, V> entry) {
+        EntryList<K, V> list = frequencyBuckets.get(entry.frequency);
         if (list == null) {
-            // An explicit evict drained the lowest bucket, so look up the new minimum.
-            minFrequency = frequencyMap.keySet().stream()
+            return;
+        }
+        list.remove(entry);
+        if (list.isEmpty()) {
+            frequencyBuckets.remove(entry.frequency);
+        }
+    }
+
+    private void evictLeastFrequent() {
+        EntryList<K, V> list = frequencyBuckets.get(minFrequency);
+        if (list == null) {
+            // The lowest bucket was drained by an explicit evict, so find the new minimum.
+            minFrequency = frequencyBuckets.keySet().stream()
                     .mapToInt(Integer::intValue)
                     .min()
                     .orElse(0);
-            list = frequencyMap.get(minFrequency);
+            list = frequencyBuckets.get(minFrequency);
             if (list == null) {
                 return;
             }
         }
-
-        Node<K, V> nodeToEvict = list.tail.prev;
-        list.remove(nodeToEvict);
-        if (list.size == 0) {
-            frequencyMap.remove(minFrequency);
-        }
-        cache.remove(nodeToEvict.key);
-        size--;
-    }
-
-    /**
-     * Node class representing a key-value pair with a frequency counter.
-     *
-     * @param <T> the type of key
-     * @param <V> the type of value
-     */
-    private static class Node<T, V> {
-        T key;
-        V value;
-        int frequency;
-        Node<T, V> prev;
-        Node<T, V> next;
-
-        /**
-         * Constructs a new node with the specified key and value. Initializes the frequency to 1.
-         *
-         * @param key   the key of the node
-         * @param value the value of the node
-         */
-        Node(T key, V value) {
-            this.key = key;
-            this.value = value;
-            this.frequency = 1;
+        Entry<K, V> victim = list.pollLast();
+        if (victim != null) {
+            cache.remove(victim.key);
+            if (list.isEmpty()) {
+                frequencyBuckets.remove(minFrequency);
+            }
         }
     }
 
-    /**
-     * DoublyLinkedList class representing a list of nodes. Provides methods to add and remove nodes.
-     *
-     * @param <T> the type of key
-     * @param <V> the type of value
-     */
-    private static class DoublyLinkedList<T, V> {
-        Node<T, V> head;
-        Node<T, V> tail;
-        int size;
-
-        /**
-         * Constructs an empty doubly linked list with dummy head and tail nodes.
-         */
-        DoublyLinkedList() {
-            this.head = new Node<>(null, null);
-            this.tail = new Node<>(null, null);
-            head.next = tail;
-            tail.prev = head;
-            this.size = 0;
-        }
-
-        /**
-         * Adds a node to the front of the list.
-         *
-         * @param node the node to be added
-         */
-        void add(Node<T, V> node) {
-            Node<T, V> next = head.next;
-            head.next = node;
-            node.prev = head;
-            node.next = next;
-            next.prev = node;
-            size++;
-        }
-
-        /**
-         * Removes a node from the list.
-         *
-         * @param node the node to be removed
-         */
-        void remove(Node<T, V> node) {
-            Node<T, V> prev = node.prev;
-            Node<T, V> next = node.next;
-            prev.next = next;
-            next.prev = prev;
-            size--;
-        }
+    private EntryList<K, V> bucket(int frequency) {
+        return frequencyBuckets.computeIfAbsent(frequency, unused -> new EntryList<>());
     }
 }
-
