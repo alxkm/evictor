@@ -13,8 +13,12 @@ public class MRUCache<K, V> implements CacheService<K, V> {
      * Constructs an MRU Cache with the specified capacity.
      *
      * @param capacity the capacity of the cache
+     * @throws IllegalArgumentException when the capacity is not positive
      */
     public MRUCache(int capacity) {
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("capacity must be positive, got " + capacity);
+        }
         this.capacity = capacity;
         this.cache = new HashMap<>(capacity);
         this.accessOrderList = new DoublyLinkedList<>();

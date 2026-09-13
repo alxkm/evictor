@@ -21,8 +21,12 @@ public class LFUDoublyLinkedListCache<K, V> implements CacheService<K, V> {
      * Constructs an LFU Cache with the specified capacity.
      *
      * @param capacity the capacity of the cache
+     * @throws IllegalArgumentException when the capacity is not positive
      */
     public LFUDoublyLinkedListCache(int capacity) {
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("capacity must be positive, got " + capacity);
+        }
         this.capacity = capacity;
         this.size = 0;
         this.cache = new HashMap<>();
@@ -39,20 +43,13 @@ public class LFUDoublyLinkedListCache<K, V> implements CacheService<K, V> {
      */
     @Override
     public void put(K id, V value) {
-        if (capacity <= 0) return;
-
         if (cache.containsKey(id)) {
             Node<K, V> node = cache.get(id);
             node.value = value;
             get(id); // Increase frequency
         } else {
             if (size == capacity) {
-                // Evict the least frequently used item
-                DoublyLinkedList<K, V> list = frequencyMap.get(minFrequency);
-                Node<K, V> nodeToEvict = list.tail.prev;
-                list.remove(nodeToEvict);
-                cache.remove(nodeToEvict.key);
-                size--;
+                evictLeastFrequent();
             }
             // Add new item
             Node<K, V> newNode = new Node<>(id, value);
@@ -79,8 +76,11 @@ public class LFUDoublyLinkedListCache<K, V> implements CacheService<K, V> {
         DoublyLinkedList<K, V> list = frequencyMap.get(currentFreq);
         list.remove(node);
 
-        if (currentFreq == minFrequency && list.size == 0) {
-            minFrequency++;
+        if (list.size == 0) {
+            frequencyMap.remove(currentFreq);
+            if (currentFreq == minFrequency) {
+                minFrequency++;
+            }
         }
 
         node.frequency++;
@@ -103,10 +103,36 @@ public class LFUDoublyLinkedListCache<K, V> implements CacheService<K, V> {
         list.remove(node);
         cache.remove(id);
 
-        if (currentFreq == minFrequency && list.size == 0) {
-            minFrequency++;
+        if (list.size == 0) {
+            frequencyMap.remove(currentFreq);
         }
 
+        size--;
+    }
+
+    /**
+     * Removes the least frequently used item, breaking a tie by recency.
+     */
+    private void evictLeastFrequent() {
+        DoublyLinkedList<K, V> list = frequencyMap.get(minFrequency);
+        if (list == null) {
+            // An explicit evict drained the lowest bucket, so look up the new minimum.
+            minFrequency = frequencyMap.keySet().stream()
+                    .mapToInt(Integer::intValue)
+                    .min()
+                    .orElse(0);
+            list = frequencyMap.get(minFrequency);
+            if (list == null) {
+                return;
+            }
+        }
+
+        Node<K, V> nodeToEvict = list.tail.prev;
+        list.remove(nodeToEvict);
+        if (list.size == 0) {
+            frequencyMap.remove(minFrequency);
+        }
+        cache.remove(nodeToEvict.key);
         size--;
     }
 

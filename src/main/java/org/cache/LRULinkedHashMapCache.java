@@ -22,8 +22,12 @@ public class LRULinkedHashMapCache<K, V> implements CacheService<K, V> {
      * The cache will automatically remove the least recently used entries when the capacity is exceeded.
      *
      * @param capacity the maximum number of elements the cache can hold
+     * @throws IllegalArgumentException when the capacity is not positive
      */
     public LRULinkedHashMapCache(int capacity) {
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("capacity must be positive, got " + capacity);
+        }
         linkHashMap = new LinkedHashMap<>(capacity, 0.75F, true) {
             @Override
             protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {

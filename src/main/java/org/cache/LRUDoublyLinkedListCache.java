@@ -35,8 +35,12 @@ public class LRUDoublyLinkedListCache<K, V> implements CacheService<K, V> {
      * Constructs a new LRUCacheNodeBased with the specified capacity.
      *
      * @param capacity the maximum number of elements the cache can hold
+     * @throws IllegalArgumentException when the capacity is not positive
      */
     public LRUDoublyLinkedListCache(int capacity) {
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("capacity must be positive, got " + capacity);
+        }
         this.capacity = capacity;
         this.cacheMap = new HashMap<>();
         this.head = new Node<>(null, null);

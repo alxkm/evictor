@@ -100,4 +100,10 @@ public class MRUCacheTest {
         assertEquals("two", cache.get(2));
         assertEquals("four", cache.get(4));
     }
+
+    @Test
+    public void testRejectsNonPositiveCapacity() {
+        assertThrows(IllegalArgumentException.class, () -> new MRUCache<>(0));
+        assertThrows(IllegalArgumentException.class, () -> new MRUCache<>(-1));
+    }
 }

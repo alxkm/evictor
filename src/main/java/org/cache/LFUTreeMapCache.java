@@ -1,6 +1,7 @@
 package org.cache;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -21,8 +22,12 @@ public class LFUTreeMapCache<K, V> implements CacheService<K, V> {
      * Constructs an LFU Cache with the specified capacity.
      *
      * @param capacity the capacity of the cache
+     * @throws IllegalArgumentException when the capacity is not positive
      */
     public LFUTreeMapCache(int capacity) {
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("capacity must be positive, got " + capacity);
+        }
         this.capacity = capacity;
         this.size = 0;
         this.cache = new HashMap<>();
@@ -38,8 +43,6 @@ public class LFUTreeMapCache<K, V> implements CacheService<K, V> {
      */
     @Override
     public void put(K id, V value) {
-        if (capacity <= 0) return;
-
         if (cache.containsKey(id)) {
             CacheNode<K, V> node = cache.get(id);
             node.value = value;
@@ -60,7 +63,7 @@ public class LFUTreeMapCache<K, V> implements CacheService<K, V> {
             // Add new item
             CacheNode<K, V> newNode = new CacheNode<>(id, value);
             cache.put(id, newNode);
-            frequencyMap.computeIfAbsent(1, k -> new HashMap<>()).put(id, newNode);
+            frequencyMap.computeIfAbsent(1, k -> new LinkedHashMap<>()).put(id, newNode);
             size++;
         }
     }
@@ -86,7 +89,7 @@ public class LFUTreeMapCache<K, V> implements CacheService<K, V> {
         }
 
         node.frequency++;
-        frequencyMap.computeIfAbsent(node.frequency, k -> new HashMap<>()).put(id, node);
+        frequencyMap.computeIfAbsent(node.frequency, k -> new LinkedHashMap<>()).put(id, node);
         return node.value;
     }
 

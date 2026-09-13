@@ -14,8 +14,12 @@ public class LRUHashMapQueueCache<K, V> implements CacheService<K, V> {
      * Constructor to initialize LRU Cache with the specified capacity.
      *
      * @param capacity the maximum number of elements the cache can hold
+     * @throws IllegalArgumentException when the capacity is not positive
      */
     public LRUHashMapQueueCache(int capacity) {
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("capacity must be positive, got " + capacity);
+        }
         this.capacity = capacity;
         this.cacheMap = new HashMap<>();
         this.deque = new LinkedList<>();

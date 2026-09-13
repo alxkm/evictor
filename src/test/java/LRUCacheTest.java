@@ -2,6 +2,7 @@ import org.cache.CacheService;
 import org.cache.LRUDoublyLinkedListCache;
 import org.cache.LRULinkedHashMapCache;
 import org.cache.LRUHashMapQueueCache;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -9,6 +10,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class LRUCacheTest {
 
@@ -81,5 +83,13 @@ public class LRUCacheTest {
         assertNull(cache.get(2));
         assertEquals("one", cache.get(1));
         assertEquals("three", cache.get(3));
+    }
+
+    @Test
+    public void testRejectsNonPositiveCapacity() {
+        assertThrows(IllegalArgumentException.class, () -> new LRUDoublyLinkedListCache<>(0));
+        assertThrows(IllegalArgumentException.class, () -> new LRUHashMapQueueCache<>(0));
+        assertThrows(IllegalArgumentException.class, () -> new LRULinkedHashMapCache<>(0));
+        assertThrows(IllegalArgumentException.class, () -> new LRUDoublyLinkedListCache<>(-1));
     }
 }

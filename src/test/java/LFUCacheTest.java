@@ -3,6 +3,7 @@ import org.cache.LFUDoublyLinkedListCache;
 import org.cache.LFUTreeMapCache;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -27,18 +28,6 @@ public class LFUCacheTest {
         );
     }
 
-
-    /**
-     * Provides instances of LFU cache with negative capacity implementations to be tested.
-     *
-     * @return a stream of CacheService instances
-     */
-    private static Stream<CacheService<Integer, String>> negativeCapacityCacheProvider() {
-        return Stream.of(
-                new LFUDoublyLinkedListCache<>(-1),
-                new LFUTreeMapCache<>(-1)
-        );
-    }
 
     @BeforeEach
     void setUp() {
@@ -124,22 +113,34 @@ public class LFUCacheTest {
         assertEquals("four", cache.get(4)); // key 4 should be added
     }
 
-    @ParameterizedTest
-    @MethodSource("cacheProvider")
-    public void testEdgeCaseCapacityZero(CacheService<Integer, String> cache) {
-        CacheService<Integer, String> zeroCapacityCache = new LFUTreeMapCache<>(0);
-        zeroCapacityCache.put(1, "one");
-
-        assertNull(zeroCapacityCache.get(1)); // No item should be added
+    @Test
+    public void testRejectsNonPositiveCapacity() {
+        assertThrows(IllegalArgumentException.class, () -> new LFUDoublyLinkedListCache<>(0));
+        assertThrows(IllegalArgumentException.class, () -> new LFUDoublyLinkedListCache<>(-1));
+        assertThrows(IllegalArgumentException.class, () -> new LFUTreeMapCache<>(0));
+        assertThrows(IllegalArgumentException.class, () -> new LFUTreeMapCache<>(-1));
     }
 
     @ParameterizedTest
-    @MethodSource("negativeCapacityCacheProvider")
-    public void testEdgeCaseNegativeCapacity(CacheService<Integer, String> cache) {
-        CacheService<Integer, String> negativeCapacityCache = new LFUTreeMapCache<>(-1);
-        negativeCapacityCache.put(1, "one");
+    @MethodSource("cacheProvider")
+    public void testEvictingLowestFrequencyKeepsCacheUsable(CacheService<Integer, String> cache) {
+        cache.put(1, "one");
+        cache.put(2, "two");
+        cache.put(3, "three");
 
-        assertNull(negativeCapacityCache.get(1)); // No item should be added
+        // Lift two entries out of frequency one, then drain that bucket by hand so the tracked
+        // minimum frequency points at a bucket that no longer exists.
+        cache.get(1);
+        cache.get(2);
+        cache.evict(3);
+
+        cache.put(4, "four");
+        cache.put(5, "five");
+
+        assertEquals("one", cache.get(1));
+        assertEquals("two", cache.get(2));
+        assertEquals("five", cache.get(5));
+        assertNull(cache.get(4)); // key 4 was the only one left at frequency one
     }
 
     @ParameterizedTest
