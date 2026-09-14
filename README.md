@@ -18,13 +18,14 @@ in this repository:
 | LFU | 56.9% | 80.0% | 0.0% | 0.0% |
 | FIFO | 43.3% | 55.4% | 0.0% | 0.0% |
 | Clock | 48.9% | 69.9% | 0.0% | 0.0% |
-| Random | 43.3% | 55.5% | 68.6% | 0.0% |
+| Random | 43.3% | 55.5% | 68.5% | 0.0% |
 | MRU | 2.7% | 1.0% | **83.2%** | 0.9% |
 | SLRU | 56.8% | **80.0%** | 0.0% | 0.0% |
 | 2Q | 55.7% | 76.7% | 71.0% | 0.0% |
 | ARC | **57.0%** | **80.0%** | 0.0% | 0.0% |
 
-Hit rate, cache capacity 500, 500,000 requests per pattern. Reproduce with `./gradlew benchmark`.
+Hit rate, cache capacity 500, 500,000 requests per pattern. Every run is seeded, so
+`./gradlew benchmark` reproduces this table exactly.
 
 Three things worth reading off that table:
 
