@@ -14,6 +14,7 @@ import org.cache.TwoQueueCache;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.function.IntFunction;
 
 /**
@@ -30,6 +31,9 @@ public final class HitRateBenchmark {
 
     private static final int CAPACITY = 500;
     private static final int REQUESTS = 500_000;
+
+    /** Fixed so the random replacement row is reproducible run to run. */
+    private static final long RANDOM_SEED = 7;
 
     private HitRateBenchmark() {
     }
@@ -52,7 +56,7 @@ public final class HitRateBenchmark {
         policies.put("LFU", LFUDoublyLinkedListCache::new);
         policies.put("FIFO", FIFOCache::new);
         policies.put("Clock", ClockCache::new);
-        policies.put("Random", RandomReplacementCache::new);
+        policies.put("Random", capacity -> new RandomReplacementCache<>(capacity, new Random(RANDOM_SEED)));
         policies.put("MRU", MRUCache::new);
         policies.put("SLRU", SLRUCache::new);
         policies.put("2Q", TwoQueueCache::new);

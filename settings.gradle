@@ -1,2 +1,9 @@
+plugins {
+    // Lets Gradle fetch the JDK named by the toolchain in build.gradle when that version
+    // is not installed locally. Without it, auto-provisioning is deprecated and fails
+    // outright in Gradle 10.
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
 rootProject.name = 'evictor'
 
