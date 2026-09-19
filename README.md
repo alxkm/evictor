@@ -1,11 +1,20 @@
-# Evictor
+<h1 align="center">
+  <img src="https://github.githubassets.com/images/icons/emoji/unicode/1f5c3.png" height="64px" alt="" /><br/>
+  Evictor
+</h1>
 
-Thirteen cache eviction policies in Java, behind one interface, measured against each other.
+<p align="center">
+  <b>Thirteen cache eviction policies in Java, behind one interface, measured against each other.</b>
+</p>
 
-[![Java CI with Gradle](https://github.com/alxkm/evictor/actions/workflows/gradle.yml/badge.svg)](https://github.com/alxkm/evictor/actions/workflows/gradle.yml)
-[![CodeQL](https://github.com/alxkm/evictor/actions/workflows/codeql.yml/badge.svg)](https://github.com/alxkm/evictor/actions/workflows/codeql.yml)
-[![Java 17](https://img.shields.io/badge/Java-17-blue.svg)](https://openjdk.org/projects/jdk/17/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<p align="center">
+  <a href="https://github.com/alxkm/evictor/actions/workflows/gradle.yml"><img src="https://github.com/alxkm/evictor/actions/workflows/gradle.yml/badge.svg" alt="Build"></a>
+  <a href="https://github.com/alxkm/evictor/actions/workflows/codeql.yml"><img src="https://github.com/alxkm/evictor/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
+  <a href="https://openjdk.org/projects/jdk/17/"><img src="https://img.shields.io/badge/Java-17%2B-orange.svg" alt="Java 17+"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+</p>
+
+---
 
 ## The reason this repository exists
 
